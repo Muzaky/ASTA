@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Events\UserStatusChanged;
 
 class M_Relawan extends Model
 {
@@ -15,6 +16,7 @@ class M_Relawan extends Model
 
     protected $fillable = [
         'id',
+        'id_users',
         'nama_depan',
         'nama_belakang',
         'umur',
@@ -25,4 +27,12 @@ class M_Relawan extends Model
         'email',
         'no_hp',
     ];
+
+    public function setStatus($status)
+{
+    $this->status = $status;
+    $this->save();
+
+    event(new UserStatusChanged($this->id, $status));
+}
 }

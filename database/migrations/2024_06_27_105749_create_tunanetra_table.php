@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('tunanetra', function (Blueprint $table) {
             $table->id();
+            $table->integer('id_users')->unique();
             $table->string('nama_depan');
             $table->string('nama_belakang');
             $table->integer('umur');

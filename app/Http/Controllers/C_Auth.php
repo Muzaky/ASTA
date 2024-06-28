@@ -107,13 +107,14 @@ class C_Auth extends Controller
                 'password' => 'required',
                 'id_roles' => 'required',
             ]);
-            User::create([
+            $user = User::create([
                 'name' => $request->nama_depan . ' ' . $request->nama_belakang,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
                 'id_roles' => $request->id_roles,
             ]);
             M_Relawan::create([
+                'id_users' => $user->id,
                 'nama_depan' => $request->nama_depan,
                 'nama_belakang' => $request->nama_belakang,
                 'umur' => $request->umur,

@@ -1,0 +1,10 @@
+// resources/sass/app.scss
+
+// Import Bootstrap or any other libraries you may use
+@import '~bootstrap/scss/bootstrap';
+
+// Import your custom Sass files here
+@import 'variables';
+@import 'mixins';
+@import 'components/buttons';
+@import 'layouts/main';
