@@ -34,17 +34,21 @@ class C_Call extends Controller
     public function getRandomVolunteer()
     {
         $volunteer = M_Relawan::where('status', 'online')->inRandomOrder()->first();
-        return response()->json($volunteer);
+
+        if ($volunteer) {
+            return response()->json($volunteer);
+        } else {
+            return response()->json(['message' => 'No volunteers are currently online.'], 404);
+        }
     }
 
     public function handleSignal(Request $request)
     {
-        // Validate incoming request data
         $data = $request->validate([
-            'to' => 'required|string',  // Ensure 'to' is required and a string
+            'to' => 'required|string',
             'type' => 'required|string',
             'sdp' => 'sometimes|string',
-            'candidate' => 'sometimes|array',
+            'candidate' => 'sometimes|array', // Ensure you can handle array format correctly
         ]);
 
         $to = $data['to'];
@@ -53,11 +57,11 @@ class C_Call extends Controller
         switch ($data['type']) {
             case 'offer':
             case 'answer':
-                // Log SDP message
+                // Store SDP in your application as needed
                 Log::info("Received {$data['type']} from {$to}: " . json_encode($data['sdp']));
                 break;
             case 'ice-candidate':
-                // Log ICE candidate
+                // Handle ICE candidate
                 Log::info("Received ICE candidate from {$to}: " . json_encode($data['candidate']));
                 break;
             default:
@@ -65,7 +69,6 @@ class C_Call extends Controller
                 break;
         }
 
-        // Respond with a success message
         return response()->json(['message' => 'Signal received successfully']);
     }
 }

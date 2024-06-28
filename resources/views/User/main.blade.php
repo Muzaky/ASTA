@@ -26,7 +26,7 @@
     }
 
     .offline {
-        background-color: red;
+        z background-color: red;
     }
 </style>
 
@@ -74,8 +74,15 @@
             <button id="toggle-button" class="px-4 py-2 bg-blue-500 text-white rounded">Go Online</button>
             <div>
                 <button id="call-button" class="px-4 py-2 bg-green-500 text-white rounded">Call</button>
+                <video id="local-video" autoplay muted></video>
                 <video id="remote-video" autoplay></video>
             </div>
+            <div id="incoming-call" style="display:none;">
+                <p>Incoming call...</p>
+                <button id="answer-button">Answer</button>
+                <button id="reject-button">Reject</button>
+            </div>
+            <button id="end-call-button" style="display:none;">End Call</button>
         @endif
     </div>
 </body>
@@ -106,165 +113,188 @@
     });
 
 
-    let peerConnection;
+    document.addEventListener('DOMContentLoaded', (event) => {
+        let peerConnection;
+        let callerId;
 
-    document.getElementById('call-button').addEventListener('click', function() {
-        console.log('Calling volunteer...');
-        axios.get('/random-volunteer').then(response => {
-            const volunteer = response.data;
-
-            if (volunteer) {
-                const peerConnection = createPeerConnection(volunteer.id);
-
-                // Create offer and send SDP to the volunteer
-                peerConnection.createOffer()
-                    .then(offer => peerConnection.setLocalDescription(offer))
-                    .then(() => {
-                        axios.post('/signal', {
-                                to: String(volunteer.id),
-                                type: 'offer',
-                                sdp: String(peerConnection.localDescription)
-                            })
-                            .then(response => {
-                                console.log('Signal sent successfully:', response.data);
-                            })
-                            .catch(error => {
-                                console.error('Error sending signal:', error);
-                                if (error.response) {
-                                    console.log(error.response
-                                        .data); // Log server's validation error details
-                                }
-                            });
-                    })
-                    .catch(error => {
-                        console.error('Error creating offer:', error);
-                    });
-            } else {
-                alert('No volunteers are currently online.');
-            }
-        });
-    });
-
-    function createPeerConnection(peerId) {
-        const config = {
-            iceServers: [{
-                urls: 'stun:stun.l.google.com:19302'
-            }]
-        };
-
-        const peerConnection = new RTCPeerConnection(config);
-
-        peerConnection.onicecandidate = ({
-            candidate
-        }) => {
-            if (candidate) {
-                // Send ICE candidate to the volunteer (via signaling server)
-                axios.post('/signal', {
-                        to: peerId,
-                        candidate
-                    })
-                    .then(response => {
-                        // Handle success if needed
-                    })
-                    .catch(error => {
-                        console.error('Error sending ICE candidate:', error);
-                    });
-            }
-        };
-
-        peerConnection.ontrack = ({
-            streams: [stream]
-        }) => {
-            // Handle incoming stream (e.g., display remote video)
-            document.getElementById('remote-video').srcObject = stream;
-        };
-
-        return peerConnection;
-    }
-
-    Echo.channel('signaling').listen('.signal', (e) => {
-        const {
-            type,
-            from,
-            data
-        } = e.message;
-
-        switch (type) {
-            case 'offer':
-                // Received offer from caller
-                peerConnection.setRemoteDescription(new RTCSessionDescription(data))
-                    .then(() => {
-                        // Create answer
-                        return peerConnection.createAnswer();
-                    })
-                    .then(answer => {
-                        // Set local description with answer and send it back
-                        return peerConnection.setLocalDescription(answer);
-                    })
-                    .then(() => {
-                        // Send answer via signaling server
-                        axios.post('/signal', {
-                                to: from,
-                                type: 'answer',
-                                sdp: peerConnection.localDescription
-                            })
-                            .then(response => {
-                                // Handle success if needed
-                            })
-                            .catch(error => {
-                                console.error('Error sending answer:', error);
-                            });
-                    })
-                    .catch(error => {
-                        console.error('Error setting remote description:', error);
-                    });
-                break;
-            case 'answer':
-                // Received answer from callee
-                peerConnection.setRemoteDescription(new RTCSessionDescription(data))
-                    .catch(error => {
-                        console.error('Error setting remote description:', error);
-                    });
-                break;
-            case 'ice-candidate':
-                // Received ICE candidate from peer
-                peerConnection.addIceCandidate(new RTCIceCandidate(data))
-                    .catch(error => {
-                        console.error('Error adding ICE candidate:', error);
-                    });
-                break;
-            default:
-                console.warn('Unknown signal type received:', type);
-                break;
-        }
-    });
-
-    // Handling ICE candidates
-    peerConnection.onicecandidate = ({
-        candidate
-    }) => {
-        if (candidate) {
-            axios.post('/signal', {
-                    to: volunteer.id,
-                    type: 'ice-candidate',
-                    candidate: candidate
-                })
+        document.getElementById('call-button').addEventListener('click', function() {
+            console.log('Calling volunteer...');
+            axios.get('/random-volunteer')
                 .then(response => {
-                    // Handle success if needed
+                    if (response.status === 200) {
+                        const volunteer = response.data;
+                        console.log(volunteer);
+                        if (volunteer) {
+                            handleIncomingOffer(volunteer.id, volunteer.sdp);
+                            // Display UI elements for call in progress
+                            document.getElementById('call-button').style.display = 'none';
+                            document.getElementById('incoming-call').style.display = 'block';
+                        } else {
+                            alert('No volunteers are currently online.');
+                        }
+                    } else {
+                        alert('No volunteers are currently online.');
+                    }
                 })
                 .catch(error => {
-                    console.error('Error sending ICE candidate:', error);
+                    if (error.response && error.response.status === 404) {
+                        alert('No volunteers are currently online.');
+                    } else {
+                        console.error('Error fetching volunteer:', error);
+                    }
+                });
+        });
+
+        function handleIncomingOffer(from, sdp) {
+            // Display incoming call UI elements
+            document.getElementById('incoming-call').style.display = 'block';
+
+            // Bind event listeners to answer and reject buttons
+            document.getElementById('answer-button').addEventListener('click', () => answerCall(from, sdp));
+            document.getElementById('reject-button').addEventListener('click', () => rejectCall(from));
+        }
+
+        function answerCall(peerId, sdp) {
+            document.getElementById('incoming-call').style.display = 'none';
+            document.getElementById('end-call-button').style.display = 'block';
+
+            navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: true
+                })
+                .then(stream => {
+                    // Add tracks to peer connection and update UI
+                    stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+                    document.getElementById('local-video').srcObject = stream;
+
+                    // Set remote description and create answer
+                    return peerConnection.setRemoteDescription(new RTCSessionDescription({
+                        type: 'offer',
+                        sdp
+                    }));
+                })
+                .then(() => peerConnection.createAnswer())
+                .then(answer => peerConnection.setLocalDescription(answer))
+                .then(() => {
+                    // Send answer to caller
+                    axios.post('/signal', {
+                            to: String(peerId),
+                            type: 'answer',
+                            sdp: peerConnection.localDescription.sdp
+                        })
+                        .then(response => {
+                            console.log('Answer sent successfully:', response.data);
+                        })
+                        .catch(error => {
+                            console.error('Error sending answer:', error);
+                        });
+                })
+                .catch(error => {
+                    console.error('Error handling offer:', error);
                 });
         }
-    };
 
-    // Handling incoming tracks
-    peerConnection.ontrack = ({
-        streams: [stream]
-    }) => {
-        console.log('Received remote stream:', stream);
-        document.getElementById('remote-video').srcObject = stream;
-    };
+
+        function createPeerConnection(peerId) {
+            const config = {
+                iceServers: [{
+                    urls: 'stun:stun.l.google.com:19302'
+                }]
+            };
+
+            const peerConnection = new RTCPeerConnection(config);
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    axios.post('/signal', {
+                            to: String(peerId),
+                            type: 'ice-candidate',
+                            candidate: event.candidate.toJSON()
+                        })
+                        .then(response => {
+                            console.log('ICE candidate sent successfully:', response.data);
+                        })
+                        .catch(error => {
+                            console.error('Error sending ICE candidate:', error);
+                        });
+                }
+            };
+
+            peerConnection.ontrack = (event) => {
+                console.log('Received remote stream:', event.streams[0]);
+                document.getElementById('remote-video').srcObject = event.streams[0];
+            };
+
+            // Event listener to handle call termination
+            document.getElementById('end-call-button').addEventListener('click', () => {
+                console.log('Ending call...');
+                endCall(peerConnection);
+            });
+
+            return peerConnection;
+        }
+        // Initialize Pusher and Echo
+        const pusher = new Pusher('asta2233', {
+            cluster: 'mt1',
+            encrypted: true
+        });
+
+        const echo = new Echo({
+            broadcaster: 'pusher',
+            key: 'asta2233',
+            cluster: 'mt1',
+            forceTLS: true
+        });
+
+        // Listen for signaling messages
+        // Listen for signaling messages
+        echo.channel('signaling').listen('.signal', (e) => {
+            const {
+                type,
+                from,
+                data
+            } = e.message;
+
+            switch (type) {
+                case 'offer':
+                    handleIncomingOffer(from, data.sdp);
+                    break;
+                case 'answer':
+                    handleAnswer(data.sdp);
+                    break;
+                case 'ice-candidate':
+                    handleIceCandidate(data);
+                    break;
+                default:
+                    console.warn('Unknown signal type received:', type);
+                    break;
+            }
+        });
+
+
+
+
+
+        function rejectCall(peerId) {
+            document.getElementById('incoming-call').style.display = 'none';
+            console.log('Call rejected');
+            // Optionally, notify the caller of rejection using signaling server
+        }
+
+        function endCall() {
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            // Clean up UI or other necessary tasks
+            document.getElementById('local-video').srcObject = null;
+            document.getElementById('remote-video').srcObject = null;
+            document.getElementById('incoming-call').style.display = 'none';
+            document.getElementById('end-call-button').style.display = 'none';
+        }
+
+        document.getElementById('end-call-button').addEventListener('click', endCall)
+    });
 </script>
 <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
 <script>
